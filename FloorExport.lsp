@@ -1,90 +1,23 @@
 ;;; ========================================
-;;; Floor Export Tool - Streamlined Version
-;;; Version: 5.0 - Simple & Integrated
+;;; Floor Export Tool - Memory Path Version
+;;; Version: 6.0 - 記住上次儲存路徑
 ;;; ========================================
 
-(defun c:EX (/ old-filedia old-osmode old-expert pt1 pt2 ss base-pt)
-  
-  ;; Save system variables
-  (setq old-filedia (getvar "FILEDIA"))
-  (setq old-osmode (getvar "OSMODE"))
-  (setq old-expert (getvar "EXPERT"))
-  
-  ;; Set system variables
-  (setvar "FILEDIA" 1)   ; Enable file dialog
-  (setvar "OSMODE" 0)    ; Turn off object snap
-  (setvar "EXPERT" 2)    ; Suppress some prompts
-  
-  ;; Step 1: Prompt for selection area
-  (princ "\nSelect area to export...")
-  (setq pt1 (getpoint "\nFirst corner: "))
-  
-  (if pt1
-    (progn
-      ;; Get opposite corner
-      (setq pt2 (getcorner pt1 "\nOpposite corner: "))
-      
-      (if pt2
-        (progn
-          ;; Step 2: Select objects in window
-          (setq ss (ssget "W" pt1 pt2))
-          
-          (if (and ss (> (sslength ss) 0))
-            (progn
-              ;; Show selection count
-              (princ (strcat "\nSelected " (itoa (sslength ss)) " objects"))
-              
-              ;; Use first corner as base point
-              (setq base-pt pt1)
-              
-              ;; Step 3: Execute WBLOCK with dialog
-              ;; This will open the save dialog automatically
-              (princ "\nChoose location and filename in the dialog...")
-              
-              ;; Mark for undo
-              (command "_.UNDO" "_Mark")
-              
-              (command "_.WBLOCK")
-              ;; The dialog will appear here
-              ;; User selects path and enters filename
-              
-              ;; After dialog closes, continue with the command
-              (if (> (getvar "CMDACTIVE") 0)
-                (progn
-                  (command "")      ; No block name
-                  (command base-pt) ; Base point
-                  (command ss)      ; Selection set
-                  (command "")      ; End selection
-                )
-              )
-              
-              ;; Restore original objects
-              (command "_.UNDO" "_Back")
-              
-              (princ "\n[OK] Export completed! Original objects preserved.")
-            )
-            (princ "\nNo objects selected in the area")
-          )
-        )
-        (princ "\nSelection cancelled")
-      )
-    )
-    (princ "\nSelection cancelled")
-  )
-  
-  ;; Restore system variables
-  (setvar "FILEDIA" old-filedia)
-  (setvar "OSMODE" old-osmode)
-  (setvar "EXPERT" old-expert)
-  
-  (princ)
+;;; 全域變數 - 儲存上次的路徑
+(if (not *EXPORT-LAST-PATH*)
+  (setq *EXPORT-LAST-PATH* nil)
+)
+
+;;; 全域變數 - 儲存常用路徑列表
+(if (not *EXPORT-FAVORITE-PATHS*)
+  (setq *EXPORT-FAVORITE-PATHS* nil)
 )
 
 ;;; ========================================
-;;; Alternative version with more control
+;;; 主要輸出功能 - 記憶路徑版本
 ;;; ========================================
 
-(defun c:EXPORTDWG (/ old-filedia old-osmode pt1 pt2 ss base-pt filename ss-copy)
+(defun c:EXPORTDWG (/ old-filedia old-osmode pt1 pt2 ss base-pt filename default-path)
   
   ;; Save system variables
   (setq old-filedia (getvar "FILEDIA"))
@@ -92,20 +25,46 @@
   
   ;; Set system variables
   (setvar "OSMODE" 0)
-  
-  ;; Step 1: Get filename and path using dialog
   (setvar "FILEDIA" 1)
-  (setq filename (getfiled "Save floor plan as" "" "dwg" 1))
+  
+  ;; 決定預設路徑
+  (setq default-path 
+    (cond
+      ;; 如果有上次的路徑，使用上次的路徑
+      (*EXPORT-LAST-PATH* *EXPORT-LAST-PATH*)
+      ;; 否則使用當前圖檔路徑
+      (t (getvar "DWGPREFIX"))
+    )
+  )
+  
+  ;; 切換到記憶的路徑
+  (if (and default-path (vl-file-directory-p default-path))
+    (progn
+      (setvar "FILEDIA" 0)
+      (vl-cmdf "_.FILEDIA" "0")
+      (setvar "FILEDIA" 1)
+      ;; 使用 getfiled 並指定路徑
+      (setq filename (getfiled "儲存樓層平面圖" 
+                              (strcat default-path "floor_plan") 
+                              "dwg" 
+                              1))
+    )
+    ;; 如果路徑無效，使用預設
+    (setq filename (getfiled "儲存樓層平面圖" "" "dwg" 1))
+  )
   
   (if filename
     (progn
+      ;; 記住這次選擇的路徑
+      (setq *EXPORT-LAST-PATH* (vl-filename-directory filename))
+      
       ;; Step 2: Select area
-      (princ "\nNow select the area to export...")
-      (setq pt1 (getpoint "\nFirst corner: "))
+      (princ "\n現在請選擇要輸出的區域...")
+      (setq pt1 (getpoint "\n第一個角點: "))
       
       (if pt1
         (progn
-          (setq pt2 (getcorner pt1 "\nOpposite corner: "))
+          (setq pt2 (getcorner pt1 "\n對角點: "))
           
           (if pt2
             (progn
@@ -114,7 +73,7 @@
               
               (if (and ss (> (sslength ss) 0))
                 (progn
-                  (princ (strcat "\nExporting " (itoa (sslength ss)) " objects..."))
+                  (princ (strcat "\n正在輸出 " (itoa (sslength ss)) " 個物件..."))
                   
                   ;; Use center of selection as base point
                   (setq base-pt (list
@@ -136,25 +95,21 @@
                   ;; Verify
                   (if (findfile filename)
                     (progn
-                      (princ (strcat "\n[OK] Saved to: " filename))
-                      (princ "\n[OK] Original drawing preserved")
-                      ;; Optional: Open folder
-                      (initget "Y N")
-                      (if (= "Y" (getkword "\nOpen folder? [Y/N] <N>: "))
-                        (startapp "explorer" (vl-filename-directory filename))
-                      )
+                      (princ (strcat "\n[成功] 已儲存至: " filename))
+                      (princ (strcat "\n[提示] 下次將預設使用路徑: " *EXPORT-LAST-PATH*))
+                      (princ "\n[確認] 原始圖檔已保留")
                     )
-                    (princ "\n[ERROR] Export failed")
+                    (princ "\n[錯誤] 輸出失敗")
                   )
                 )
-                (princ "\nNo objects selected")
+                (princ "\n沒有選取到物件")
               )
             )
           )
         )
       )
     )
-    (princ "\nCancelled")
+    (princ "\n已取消")
   )
   
   ;; Restore
@@ -165,102 +120,182 @@
 )
 
 ;;; ========================================
-;;; Quick export with auto-naming
+;;; 快速切換常用路徑
 ;;; ========================================
 
-(defun c:QEX (/ old-osmode pt1 pt2 ss base-pt filepath filename floor-name)
+(defun c:SETEXPORTPATH (/ new-path option path-list num)
+  (princ "\n========== 設定輸出路徑 ==========")
+  (princ (strcat "\n當前路徑: " (if *EXPORT-LAST-PATH* *EXPORT-LAST-PATH* "未設定")))
+  (princ "\n")
+  (princ "\n[1] 使用當前圖檔路徑")
+  (princ "\n[2] 瀏覽選擇新路徑")
+  (princ "\n[3] 直接輸入路徑")
+  (princ "\n[C] 清除記憶路徑")
+  (princ "\n")
   
-  ;; Save and set variables
-  (setq old-osmode (getvar "OSMODE"))
-  (setvar "OSMODE" 0)
+  (initget "1 2 3 C")
+  (setq option (getkword "\n選擇選項 [1/2/3/C]: "))
   
-  ;; Get floor name for auto-naming
-  (setq floor-name (getstring "\nFloor name (1F/2F/B1 etc.): "))
-  
-  ;; Select area
-  (princ "\nSelect area to export...")
-  (setq pt1 (getpoint "\nFirst corner: "))
-  
-  (if pt1
-    (progn
-      (setq pt2 (getcorner pt1 "\nOpposite corner: "))
-      
-      (if pt2
-        (progn
-          ;; Select objects
-          (setq ss (ssget "W" pt1 pt2))
-          
-          (if (and ss (> (sslength ss) 0))
-            (progn
-              (princ (strcat "\nSelected " (itoa (sslength ss)) " objects"))
-              
-              ;; Set base point
-              (setq base-pt '(0 0 0))
-              
-              ;; Auto-generate filename with timestamp
-              (setq filename (strcat 
-                (getvar "DWGPREFIX")
-                floor-name
-                "_"
-                (menucmd "M=$(edtime,$(getvar,date),YYMODD-HHMMSS)")
-                ".dwg"
-              ))
-              
-              ;; Mark for undo
-              (command "_.UNDO" "_Mark")
-              
-              ;; Export
-              (command "_.WBLOCK" filename "" base-pt ss "")
-              
-              ;; Restore objects
-              (command "_.UNDO" "_Back")
-              
-              ;; Check result
-              (if (findfile filename)
-                (princ (strcat "\n[OK] Saved as: " filename))
-                (princ "\n[ERROR] Export failed")
-              )
-            )
-            (princ "\nNo objects selected")
-          )
-        )
-      )
-    )
+  (cond
+    ((= option "1")
+     (setq *EXPORT-LAST-PATH* (getvar "DWGPREFIX"))
+     (princ (strcat "\n已設定為: " *EXPORT-LAST-PATH*)))
+    
+    ((= option "2")
+     ;; 使用檔案對話框選擇任意檔案，然後取得其路徑
+     (setq new-path (getfiled "選擇該資料夾中的任意檔案" "" "" 0))
+     (if new-path
+       (progn
+         (setq *EXPORT-LAST-PATH* (vl-filename-directory new-path))
+         (princ (strcat "\n已設定為: " *EXPORT-LAST-PATH*)))
+       (princ "\n已取消")))
+    
+    ((= option "3")
+     (setq new-path (getstring T "\n輸入完整路徑 (例: C:\\Projects\\Floor Plans\\): "))
+     (if (vl-file-directory-p new-path)
+       (progn
+         (setq *EXPORT-LAST-PATH* new-path)
+         (princ (strcat "\n已設定為: " *EXPORT-LAST-PATH*)))
+       (princ "\n路徑無效!")))
+    
+    ((= option "C")
+     (setq *EXPORT-LAST-PATH* nil)
+     (princ "\n已清除記憶路徑"))
   )
-  
-  ;; Restore
-  (setvar "OSMODE" old-osmode)
   
   (princ)
 )
 
 ;;; ========================================
-;;; Batch export with custom names
+;;; 快速輸出到上次路徑（無需選擇路徑）
 ;;; ========================================
 
-(defun c:BATCHEX (/ continue old-osmode pt1 pt2 ss base-pt filename)
+(defun c:QEX (/ old-osmode pt1 pt2 ss base-pt filename floor-name timestamp)
+  
+  ;; Check if last path exists
+  (if (not *EXPORT-LAST-PATH*)
+    (progn
+      (princ "\n[提示] 第一次使用，請先使用 EXPORTDWG 設定路徑")
+      (princ "\n或使用 SETEXPORTPATH 命令設定預設路徑")
+      (c:EXPORTDWG))
+    (progn
+      ;; Save and set variables
+      (setq old-osmode (getvar "OSMODE"))
+      (setvar "OSMODE" 0)
+      
+      ;; Show current path
+      (princ (strcat "\n將儲存至: " *EXPORT-LAST-PATH*))
+      
+      ;; Get floor name for auto-naming
+      (setq floor-name (getstring "\n樓層名稱 (1F/2F/B1 等): "))
+      
+      ;; Select area
+      (princ "\n選擇要輸出的區域...")
+      (setq pt1 (getpoint "\n第一個角點: "))
+      
+      (if pt1
+        (progn
+          (setq pt2 (getcorner pt1 "\n對角點: "))
+          
+          (if pt2
+            (progn
+              ;; Select objects
+              (setq ss (ssget "W" pt1 pt2))
+              
+              (if (and ss (> (sslength ss) 0))
+                (progn
+                  (princ (strcat "\n已選取 " (itoa (sslength ss)) " 個物件"))
+                  
+                  ;; Set base point
+                  (setq base-pt '(0 0 0))
+                  
+                  ;; Generate timestamp
+                  (setq timestamp (menucmd "M=$(edtime,$(getvar,date),YYMODD_HHMMSS)"))
+                  
+                  ;; Auto-generate filename
+                  (setq filename (strcat 
+                    *EXPORT-LAST-PATH*
+                    (if (not (wcmatch *EXPORT-LAST-PATH* "*[/\\]"))
+                      "\\" "")
+                    floor-name
+                    "_"
+                    timestamp
+                    ".dwg"
+                  ))
+                  
+                  ;; Mark for undo
+                  (command "_.UNDO" "_Mark")
+                  
+                  ;; Export
+                  (command "_.WBLOCK" filename "" base-pt ss "")
+                  
+                  ;; Restore objects
+                  (command "_.UNDO" "_Back")
+                  
+                  ;; Check result
+                  (if (findfile filename)
+                    (princ (strcat "\n[成功] 已儲存: " (vl-filename-base filename) ".dwg"))
+                    (princ "\n[錯誤] 輸出失敗"))
+                )
+                (princ "\n沒有選取到物件")
+              )
+            )
+          )
+        )
+      )
+      
+      ;; Restore
+      (setvar "OSMODE" old-osmode)
+    )
+  )
+  
+  (princ)
+)
+
+;;; ========================================
+;;; 批次輸出（使用記憶路徑）
+;;; ========================================
+
+(defun c:BATCHEX (/ continue old-osmode pt1 pt2 ss base-pt filename floor-name count)
+  
+  ;; Check and set default path
+  (if (not *EXPORT-LAST-PATH*)
+    (setq *EXPORT-LAST-PATH* (getvar "DWGPREFIX"))
+  )
   
   ;; Save variables
   (setq old-osmode (getvar "OSMODE"))
   (setvar "OSMODE" 0)
-  
+  (setq count 0)
   (setq continue T)
+  
+  (princ (strcat "\n批次輸出模式 - 預設路徑: " *EXPORT-LAST-PATH*))
+  (princ "\n提示: 輸入檔名後選擇區域，直接按 Enter 結束")
   
   ;; Loop for multiple exports
   (while continue
     
-    ;; Get filename first
-    (setq filename (getfiled "Save as (or Cancel to finish)" "" "dwg" 1))
+    ;; Get filename
+    (setq floor-name (getstring (strcat "\n檔案名稱 (不含.dwg) [Enter=結束]: ")))
     
-    (if filename
+    (if (and floor-name (not (= floor-name "")))
       (progn
+        ;; Build full path
+        (setq filename (strcat
+          *EXPORT-LAST-PATH*
+          (if (not (wcmatch *EXPORT-LAST-PATH* "*[/\\]"))
+            "\\" "")
+          floor-name
+          ".dwg"
+        ))
+        
         ;; Select area
-        (princ "\nSelect area for this file...")
-        (setq pt1 (getpoint "\nFirst corner: "))
+        (princ (strcat "\n選擇 \"" floor-name "\" 的區域..."))
+        (setq pt1 (getpoint "\n第一個角點: "))
         
         (if pt1
           (progn
-            (setq pt2 (getcorner pt1 "\nOpposite corner: "))
+            (setq pt2 (getcorner pt1 "\n對角點: "))
             
             (if pt2
               (progn
@@ -281,25 +316,43 @@
                     (command "_.UNDO" "_Back")
                     
                     (if (findfile filename)
-                      (princ (strcat "\n[OK] Saved: " (vl-filename-base filename) ".dwg"))
-                      (princ "\n[ERROR] Failed")
+                      (progn
+                        (setq count (1+ count))
+                        (princ (strcat "\n[成功] 已儲存: " floor-name ".dwg")))
+                      (princ "\n[錯誤] 輸出失敗")
                     )
                   )
-                  (princ "\nNo objects selected")
+                  (princ "\n沒有選取到物件")
                 )
               )
             )
           )
         )
       )
-      (setq continue nil)  ; User cancelled file dialog
+      (setq continue nil)  ; User pressed Enter
     )
   )
   
   ;; Restore
   (setvar "OSMODE" old-osmode)
   
-  (princ "\nBatch export finished! All original objects preserved.")
+  (princ (strcat "\n批次輸出完成! 共輸出 " (itoa count) " 個檔案"))
+  (princ "\n所有原始物件均已保留")
+  (princ)
+)
+
+;;; ========================================
+;;; 開啟上次儲存的資料夾
+;;; ========================================
+
+(defun c:OPENEXPORTFOLDER ()
+  (if *EXPORT-LAST-PATH*
+    (if (vl-file-directory-p *EXPORT-LAST-PATH*)
+      (progn
+        (startapp "explorer" *EXPORT-LAST-PATH*)
+        (princ (strcat "\n已開啟: " *EXPORT-LAST-PATH*)))
+      (princ "\n路徑不存在!"))
+    (princ "\n尚未設定輸出路徑"))
   (princ)
 )
 
@@ -308,15 +361,18 @@
 ;;; ========================================
 
 (princ "\n========================================")
-(princ "\nFloor Export Tool v5.1 - Fixed Version")
+(princ "\nFloor Export Tool v6.0 - 記憶路徑版本")
 (princ "\n")
-(princ "\nCommands:")
-(princ "\n  EXPORTDWG  - Export with file dialog (recommended)")
-(princ "\n  EX         - Simple export")
-(princ "\n  QEX        - Quick export with auto-name")
-(princ "\n  BATCHEX    - Batch export multiple areas")
+(princ "\n主要命令:")
+(princ "\n  EXPORTDWG  - 主要輸出功能（記憶路徑）")
+(princ "\n  QEX        - 快速輸出（直接用上次路徑）")
+(princ "\n  BATCHEX    - 批次輸出多個區域")
 (princ "\n")
-(princ "\n[FIXED] Original objects are now preserved!")
-(princ "\nUsage: Type EXPORTDWG, choose save location, select area")
+(princ "\n輔助命令:")
+(princ "\n  SETEXPORTPATH     - 設定預設輸出路徑")
+(princ "\n  OPENEXPORTFOLDER  - 開啟上次的輸出資料夾")
+(princ "\n")
+(princ "\n[新功能] 會自動記住上次選擇的路徑!")
+(princ "\n[提示] 第一次使用時會使用當前圖檔路徑")
 (princ "\n========================================")
 (princ)
