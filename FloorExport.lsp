@@ -1,6 +1,6 @@
 ;;; ========================================
-;;; Floor Export Tool - Complete Version with Path Memory
-;;; Version: 8.0 - English Version
+;;; Floor Export Tool - Complete Version v9.0
+;;; Enhanced with System-Floor-Version naming
 ;;; ========================================
 
 ;;; Global variable to store last used path
@@ -9,11 +9,16 @@
 ;;; Global variable to store last used filename
 (setq *EXPORT-LAST-NAME* "floor_plan")
 
+;;; Global variables for QEX system/floor/version
+(setq *EXPORT-LAST-SYSTEM* "EE")
+(setq *EXPORT-LAST-FLOOR* "1F")
+(setq *EXPORT-LAST-VERSION* "v1")
+
 ;;; ========================================
 ;;; Main Export Function with Path Memory
 ;;; ========================================
 
-(defun c:EX (/ old-filedia old-osmode old-expert pt1 pt2 ss base-pt filename default-file)
+(defun c:EXPORT (/ old-filedia old-osmode old-expert pt1 pt2 ss base-pt filename default-file)
   
   ;; Save system variables
   (setq old-filedia (getvar "FILEDIA"))
@@ -101,16 +106,16 @@
 )
 
 ;;; ========================================
-;;; Quick Export to Last Path
+;;; Quick Export with System-Floor-Version
 ;;; ========================================
 
-(defun c:QEX (/ old-osmode pt1 pt2 ss base-pt filename floor-name datetime)
+(defun c:QEX (/ old-osmode pt1 pt2 ss base-pt filename system-name floor-name version-num version-choice overwrite)
   
   ;; Check if path exists
   (if (not *EXPORT-LAST-PATH*)
     (progn
-      (princ "\n[INFO] First time use, please use EX command first")
-      (c:EX))
+      (princ "\n[INFO] First time use, please use EXPORT command first")
+      (c:EXPORT))
     (progn
       ;; Save and set variables
       (setq old-osmode (getvar "OSMODE"))
@@ -118,10 +123,52 @@
       
       ;; Show current path
       (princ (strcat "\nWill save to: " *EXPORT-LAST-PATH*))
+      (princ "\n")
+      
+      ;; Get system name
+      (setq system-name (getstring (strcat "\nEnter system (EE/ME/ARCH/etc) <" *EXPORT-LAST-SYSTEM* ">: ")))
+      (if (= system-name "") 
+        (setq system-name *EXPORT-LAST-SYSTEM*)
+        (setq *EXPORT-LAST-SYSTEM* system-name))
       
       ;; Get floor name
-      (setq floor-name (getstring "\nEnter floor name (1F/2F/B1/etc): "))
-      (if (= floor-name "") (setq floor-name "floor"))
+      (setq floor-name (getstring (strcat "\nEnter floor (1F/2F/B1/RF/etc) <" *EXPORT-LAST-FLOOR* ">: ")))
+      (if (= floor-name "") 
+        (setq floor-name *EXPORT-LAST-FLOOR*)
+        (setq *EXPORT-LAST-FLOOR* floor-name))
+      
+      ;; Get version with menu
+      (princ "\nSelect version:")
+      (princ "\n  [1] v1 - Version 1")
+      (princ "\n  [2] v2 - Version 2") 
+      (princ "\n  [3] v3 - Version 3")
+      (princ "\n  [4] v4 - Version 4")
+      (princ "\n  [5] v5 - Version 5")
+      (princ "\n  [0] v0 - Draft")
+      (princ "\n  [C] Custom version")
+      
+      (initget "1 2 3 4 5 0 C")
+      (setq version-choice (getkword (strcat "\nVersion [1/2/3/4/5/0/C] <" *EXPORT-LAST-VERSION* ">: ")))
+      
+      ;; Process version choice
+      (cond
+        ((= version-choice "0") (setq version-num "v0"))
+        ((= version-choice "2") (setq version-num "v2"))
+        ((= version-choice "3") (setq version-num "v3"))
+        ((= version-choice "4") (setq version-num "v4"))
+        ((= version-choice "5") (setq version-num "v5"))
+        ((= version-choice "C") 
+         (setq version-num (getstring "\nEnter custom version (e.g., vA, vFinal): "))
+         (if (= version-num "") (setq version-num *EXPORT-LAST-VERSION*)))
+        ((= version-choice "") (setq version-num *EXPORT-LAST-VERSION*))
+        (T (setq version-num "v1"))
+      )
+      
+      ;; Save version
+      (setq *EXPORT-LAST-VERSION* version-num)
+      
+      ;; Show filename preview
+      (princ (strcat "\nFilename will be: " system-name "-" floor-name "-" version-num ".dwg"))
       
       ;; Select area
       (princ "\nSelect area to export...")
@@ -143,32 +190,152 @@
                   ;; Set base point
                   (setq base-pt '(0 0 0))
                   
-                  ;; Create datetime string
-                  (setq datetime (menucmd "M=$(edtime,$(getvar,date),YYMMDD_HHMM)"))
-                  
-                  ;; Auto-generate filename
+                  ;; Generate filename: SYSTEM-FLOOR-VERSION.dwg
                   (setq filename (strcat 
                     *EXPORT-LAST-PATH*
                     "\\"
+                    system-name
+                    "-"
                     floor-name
-                    "_"
-                    datetime
+                    "-"
+                    version-num
                     ".dwg"
                   ))
                   
-                  ;; Mark for undo
-                  (command "_.UNDO" "_Mark")
-                  
-                  ;; Export
-                  (command "_.WBLOCK" filename "" base-pt ss "")
-                  
-                  ;; Restore objects
-                  (command "_.UNDO" "_Back")
-                  
-                  ;; Check result
+                  ;; Check if file exists
                   (if (findfile filename)
-                    (princ (strcat "\n[OK] Saved: " (vl-filename-base filename) ".dwg"))
-                    (princ "\n[ERROR] Export failed")
+                    (progn
+                      (princ (strcat "\n[WARNING] File exists: " (vl-filename-base filename) ".dwg"))
+                      (initget "Y N")
+                      (setq overwrite (getkword "\nOverwrite? [Y/N] <N>: "))
+                      (if (not (= overwrite "Y"))
+                        (setq filename nil)
+                      )
+                    )
+                  )
+                  
+                  (if filename
+                    (progn
+                      ;; Mark for undo
+                      (command "_.UNDO" "_Mark")
+                      
+                      ;; Export
+                      (command "_.WBLOCK" filename "" base-pt ss "")
+                      
+                      ;; Restore objects
+                      (command "_.UNDO" "_Back")
+                      
+                      ;; Check result
+                      (if (findfile filename)
+                        (princ (strcat "\n[OK] Saved: " (vl-filename-base filename) ".dwg"))
+                        (princ "\n[ERROR] Export failed")
+                      )
+                    )
+                    (princ "\n[CANCELLED] Export cancelled")
+                  )
+                )
+                (princ "\nNo objects selected")
+              )
+            )
+          )
+        )
+      )
+      
+      ;; Restore
+      (setvar "OSMODE" old-osmode)
+    )
+  )
+  
+  (princ)
+)
+
+;;; ========================================
+;;; Quick Export Repeat - Same settings, different area
+;;; ========================================
+
+(defun c:QEXR (/ old-osmode pt1 pt2 ss base-pt filename overwrite)
+  
+  ;; Check if we have previous settings
+  (if (not *EXPORT-LAST-PATH*)
+    (progn
+      (princ "\n[INFO] Please use QEX or EXDWG command first to set initial values")
+      (c:QEX))
+    (progn
+      ;; Save and set variables
+      (setq old-osmode (getvar "OSMODE"))
+      (setvar "OSMODE" 0)
+      
+      ;; Show current settings
+      (princ "\n========== Quick Export Repeat ==========")
+      (princ (strcat "\nPath: " *EXPORT-LAST-PATH*))
+      (princ (strcat "\nSystem: " *EXPORT-LAST-SYSTEM*))
+      (princ (strcat "\nFloor: " *EXPORT-LAST-FLOOR*))
+      (princ (strcat "\nVersion: " *EXPORT-LAST-VERSION*))
+      (princ (strcat "\nFilename: " *EXPORT-LAST-SYSTEM* "-" *EXPORT-LAST-FLOOR* "-" *EXPORT-LAST-VERSION* ".dwg"))
+      (princ "\n=========================================")
+      
+      ;; Select area
+      (princ "\nSelect area to export...")
+      (setq pt1 (getpoint "\nFirst corner: "))
+      
+      (if pt1
+        (progn
+          (setq pt2 (getcorner pt1 "\nOpposite corner: "))
+          
+          (if pt2
+            (progn
+              ;; Select objects
+              (setq ss (ssget "W" pt1 pt2))
+              
+              (if (and ss (> (sslength ss) 0))
+                (progn
+                  (princ (strcat "\nSelected " (itoa (sslength ss)) " objects"))
+                  
+                  ;; Set base point
+                  (setq base-pt '(0 0 0))
+                  
+                  ;; Generate filename
+                  (setq filename (strcat 
+                    *EXPORT-LAST-PATH*
+                    "\\"
+                    *EXPORT-LAST-SYSTEM*
+                    "-"
+                    *EXPORT-LAST-FLOOR*
+                    "-"
+                    *EXPORT-LAST-VERSION*
+                    ".dwg"
+                  ))
+                  
+                  ;; Check if file exists
+                  (if (findfile filename)
+                    (progn
+                      (princ (strcat "\n[WARNING] File exists: " (vl-filename-base filename) ".dwg"))
+                      (initget "Y N")
+                      (setq overwrite (getkword "\nOverwrite? [Y/N] <N>: "))
+                      (if (not (= overwrite "Y"))
+                        (setq filename nil)
+                      )
+                    )
+                  )
+                  
+                  (if filename
+                    (progn
+                      ;; Mark for undo
+                      (command "_.UNDO" "_Mark")
+                      
+                      ;; Export
+                      (command "_.WBLOCK" filename "" base-pt ss "")
+                      
+                      ;; Restore objects
+                      (command "_.UNDO" "_Back")
+                      
+                      ;; Check result
+                      (if (findfile filename)
+                        (princ (strcat "\n[OK] Saved: " (vl-filename-base filename) ".dwg"))
+                        (princ "\n[ERROR] Export failed")
+                      )
+                    )
+                    (princ "\n[CANCELLED] Export cancelled")
                   )
                 )
                 (princ "\nNo objects selected")
@@ -347,7 +514,10 @@
 (defun c:SHOWPATH ()
   (princ "\n========== Current Settings ==========")
   (princ (strcat "\nExport Path: " (if *EXPORT-LAST-PATH* *EXPORT-LAST-PATH* "Not set")))
-  (princ (strcat "\nLast Name: " (if *EXPORT-LAST-NAME* *EXPORT-LAST-NAME* "floor_plan")))
+  (princ (strcat "\nLast System: " *EXPORT-LAST-SYSTEM*))
+  (princ (strcat "\nLast Floor: " *EXPORT-LAST-FLOOR*))
+  (princ (strcat "\nLast Version: " *EXPORT-LAST-VERSION*))
+  (princ (strcat "\nNext filename: " *EXPORT-LAST-SYSTEM* "-" *EXPORT-LAST-FLOOR* "-" *EXPORT-LAST-VERSION* ".dwg"))
   (princ (strcat "\nDrawing Path: " (getvar "DWGPREFIX")))
   (princ "\n======================================")
   (princ)
@@ -358,11 +528,12 @@
 ;;; ========================================
 
 (princ "\n========================================")
-(princ "\n Floor Export Tool v8.0 - Path Memory")
+(princ "\n Floor Export Tool v9.0 - Complete")
 (princ "\n")
 (princ "\n Main Commands:")
-(princ "\n   EX        - Export with dialog (remembers path)")
-(princ "\n   QEX       - Quick export to last path")
+(princ "\n   EXPORT    - Export with dialog (remembers path)")
+(princ "\n   QEX       - Quick export (System-Floor-Version)")
+(princ "\n   QEXR      - Repeat last QEX settings")
 (princ "\n   BATCHEX   - Batch export multiple areas")
 (princ "\n")
 (princ "\n Utility Commands:")
@@ -370,7 +541,8 @@
 (princ "\n   OPENFOLDER - Open last export folder")
 (princ "\n   SHOWPATH   - Show current settings")
 (princ "\n")
-(princ "\n [NEW] Auto-remembers last used path!")
-(princ "\n [TIP] Use EX first time, then QEX for speed")
+(princ "\n [NEW] QEX uses System-Floor-Version naming!")
+(princ "\n       Example: EE-2F-v1.dwg")
+(princ "\n [TIP] Use QEXR to repeat with same settings")
 (princ "\n========================================")
 (princ)
