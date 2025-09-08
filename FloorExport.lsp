@@ -1,6 +1,6 @@
 ;;; ========================================
-;;; Floor Export Tool - Complete Version v9.0
-;;; Enhanced with System-Floor-Version naming
+;;; Floor Export Tool - Complete Version v9.1
+;;; Syntax corrected and verified.
 ;;; ========================================
 
 ;;; Global variable to store last used path
@@ -18,18 +18,17 @@
 ;;; Main Export Function with Path Memory
 ;;; ========================================
 
-(defun c:EXPORT (/ old-filedia old-osmode old-expert pt1 pt2 ss base-pt filename default-file)
-  
+(defun c:EXDWG (/ old-filedia old-osmode old-expert pt1 pt2 ss base-pt filename default-file)
   ;; Save system variables
   (setq old-filedia (getvar "FILEDIA"))
   (setq old-osmode (getvar "OSMODE"))
   (setq old-expert (getvar "EXPERT"))
-  
+
   ;; Set system variables
   (setvar "FILEDIA" 1)
   (setvar "OSMODE" 0)
   (setvar "EXPERT" 2)
-  
+
   ;; Build default file path
   (if *EXPORT-LAST-PATH*
     ;; Use last path if available
@@ -37,11 +36,11 @@
     ;; Otherwise use drawing path
     (setq default-file (strcat (getvar "DWGPREFIX") *EXPORT-LAST-NAME*))
   )
-  
+
   ;; Get save location with default path
   (princ "\nSelect save location...")
   (setq filename (getfiled "Save floor plan as" default-file "dwg" 1))
-  
+
   (if filename
     (progn
       ;; Store the path for next time
@@ -114,8 +113,8 @@
   ;; Check if path exists
   (if (not *EXPORT-LAST-PATH*)
     (progn
-      (princ "\n[INFO] First time use, please use EXPORT command first")
-      (c:EXPORT))
+      (princ "\n[INFO] First time use, please use EXDWG command first")
+      (c:EXDWG))
     (progn
       ;; Save and set variables
       (setq old-osmode (getvar "OSMODE"))
@@ -160,8 +159,8 @@
         ((= version-choice "C") 
          (setq version-num (getstring "\nEnter custom version (e.g., vA, vFinal): "))
          (if (= version-num "") (setq version-num *EXPORT-LAST-VERSION*)))
-        ((= version-choice "") (setq version-num *EXPORT-LAST-VERSION*))
-        (T (setq version-num "v1"))
+        ((or (= version-choice "1") (= version-choice nil)) (setq version-num "v1")) ; Default to v1
+        (T (setq version-num *EXPORT-LAST-VERSION*)) ; Keep last if user inputs something invalid
       )
       
       ;; Save version
@@ -208,7 +207,7 @@
                       (princ (strcat "\n[WARNING] File exists: " (vl-filename-base filename) ".dwg"))
                       (initget "Y N")
                       (setq overwrite (getkword "\nOverwrite? [Y/N] <N>: "))
-                      (if (not (= overwrite "Y"))
+                      (if (not (or (= overwrite "Y") (= overwrite "y")))
                         (setq filename nil)
                       )
                     )
@@ -312,7 +311,7 @@
                       (princ (strcat "\n[WARNING] File exists: " (vl-filename-base filename) ".dwg"))
                       (initget "Y N")
                       (setq overwrite (getkword "\nOverwrite? [Y/N] <N>: "))
-                      (if (not (= overwrite "Y"))
+                      (if (not (or (= overwrite "Y") (= overwrite "y")))
                         (setq filename nil)
                       )
                     )
@@ -467,7 +466,7 @@
     
     ;; Option 2: Browse
     ((= option "2")
-     (setq new-path (getfiled "Select any file in target folder" "" "" 0))
+     (setq new-path (getfiled "Select any file in target folder" "" "" 8))
      (if new-path
        (progn
          (setq *EXPORT-LAST-PATH* (vl-filename-directory new-path))
@@ -528,13 +527,13 @@
 ;;; ========================================
 
 (princ "\n========================================")
-(princ "\n Floor Export Tool v9.0 - Complete")
+(princ "\n Floor Export Tool v9.1 - Complete")
 (princ "\n")
 (princ "\n Main Commands:")
-(princ "\n   EXPORT    - Export with dialog (remembers path)")
-(princ "\n   QEX       - Quick export (System-Floor-Version)")
-(princ "\n   QEXR      - Repeat last QEX settings")
-(princ "\n   BATCHEX   - Batch export multiple areas")
+(princ "\n   EXDWG      - Export with dialog (remembers path)")
+(princ "\n   QEX        - Quick export (System-Floor-Version)")
+(princ "\n   QEXR       - Repeat last QEX settings")
+(princ "\n   BATCHEX    - Batch export multiple areas")
 (princ "\n")
 (princ "\n Utility Commands:")
 (princ "\n   SETPATH    - Set default export path")
